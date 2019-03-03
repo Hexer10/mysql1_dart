@@ -71,12 +71,15 @@ class ConnectionSettings {
 /// Represents a connection to the database. Use [connect] to open a connection. You
 /// must call [close] when you are done.
 class MySqlConnection {
-  final Duration _timeout;
+  final ConnectionSettings _connectionSettings;
+  ConnectionSettings get connectionSettings => _connectionSettings;
+  ConnectionSettings get c => _connectionSettings;
+
 
   ReqRespConnection _conn;
   bool _sentClose = false;
 
-  MySqlConnection(this._timeout, this._conn);
+  MySqlConnection(this._connectionSettings);
 
   /// Close the connection
   ///
@@ -88,7 +91,7 @@ class MySqlConnection {
     _sentClose = true;
 
     try {
-      await _conn.processHandlerNoResponse(new QuitHandler(), _timeout);
+      await _conn.processHandlerNoResponse(new QuitHandler(), c.timeout);
     } catch (e, st) {
       _log.warning("Error sending quit on connection", e, st);
     }
@@ -106,14 +109,14 @@ class MySqlConnection {
   /// socket.
   /// A [TimeoutException] is thrown if there is a timeout in the handshake with the
   /// server.
-  static Future<MySqlConnection> connect(ConnectionSettings c) async {
+  Future<void> connect() async {
     assert(!c.useSSL); // Not implemented
     assert(!c.useCompression);
 
     ReqRespConnection conn;
     Completer handshakeCompleter;
 
-    _log.fine("opening connection to ${c.host}:${c.port}/${c.db}");
+    print("opening connection to ${c.host}:${c.port}/${c.db}");
 
     BufferedSocket socket = await BufferedSocket.connect(
         c.host, c.port, c.timeout, onDataReady: () {
@@ -140,7 +143,7 @@ class MySqlConnection {
         socket, handler, handshakeCompleter, c.maxPacketSize);
 
     await handshakeCompleter.future.timeout(c.timeout);
-    return new MySqlConnection(c.timeout, conn);
+    _conn = conn;
   }
 
   /// Run [sql] query on the database using [values] as positional sql parameters.
@@ -149,7 +152,7 @@ class MySqlConnection {
   Future<Results> query(String sql, [Iterable<Object> values]) async {
     if (values == null || values.isEmpty) {
       return _conn.processHandlerWithResults(
-          new QueryStreamHandler(sql), _timeout);
+          new QueryStreamHandler(sql), c.timeout);
     }
 
     return (await queryMulti(sql, [values])).first;
@@ -164,7 +167,7 @@ class MySqlConnection {
     var ret = <Results>[];
     try {
       prepared = await _conn.processHandler<PreparedQuery>(
-          new PrepareHandler(sql), _timeout);
+          new PrepareHandler(sql), c.timeout);
       _log.fine("Prepared queryMulti query for: $sql");
 
       for (List v in values) {
@@ -174,12 +177,12 @@ class MySqlConnection {
         }
         var handler =
             new ExecuteQueryHandler(prepared, false /* executed */, v);
-        ret.add(await _conn.processHandlerWithResults(handler, _timeout));
+        ret.add(await _conn.processHandlerWithResults(handler, c.timeout));
       }
     } finally {
       if (prepared != null) {
         await _conn.processHandlerNoResponse(
-            new CloseStatementHandler(prepared.statementHandlerId), _timeout);
+            new CloseStatementHandler(prepared.statementHandlerId), c.timeout);
       }
     }
     return ret;

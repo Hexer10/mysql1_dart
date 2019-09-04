@@ -29,52 +29,52 @@ import 'results/row.dart';
 final Logger _log = new Logger("MySqlConnection");
 
 class ConnectionSettings {
-  String host;
-  int port;
-  String user;
-  String password;
-  String db;
-  bool useCompression;
-  bool useSSL;
-  int maxPacketSize;
-  int characterSet;
+  final String host;
+  final int port;
+  final String user;
+  final String password;
+  final String db;
+  final bool useCompression;
+  final bool useSSL;
+  final int maxPacketSize;
+  final int characterSet;
 
   /// The timeout for connecting to the database and for all database operations.
-  Duration timeout;
+  final Duration timeout;
 
-  ConnectionSettings(
-      {String this.host = 'localhost',
-      int this.port = 3306,
-      String this.user,
-      String this.password,
-      String this.db,
-      bool this.useCompression = false,
-      bool this.useSSL = false,
-      int this.maxPacketSize = 16 * 1024 * 1024,
-      Duration this.timeout = const Duration(seconds: 30),
-      int this.characterSet = CharacterSet.UTF8MB4});
+  const ConnectionSettings(
+      {this.host = 'localhost',
+      this.port = 3306,
+      this.user,
+      this.password,
+      this.db,
+      this.useCompression = false,
+      this.useSSL = false,
+      this.maxPacketSize = 16 * 1024 * 1024,
+      this.timeout = const Duration(seconds: 30),
+      this.characterSet = CharacterSet.UTF8MB4});
 
-  ConnectionSettings.copy(ConnectionSettings o) {
-    host = o.host;
-    port = o.port;
-    user = o.user;
-    password = o.password;
-    db = o.db;
-    useCompression = o.useCompression;
-    useSSL = o.useSSL;
-    maxPacketSize = o.maxPacketSize;
-    timeout = o.timeout;
-    characterSet = o.characterSet;
-  }
+  static ConnectionSettings copy(ConnectionSettings o) => ConnectionSettings(
+      host: o.host,
+      port: o.port,
+      user: o.user,
+      password: o.password,
+      db: o.db,
+      useCompression: o.useCompression,
+      useSSL: o.useSSL,
+      maxPacketSize: o.maxPacketSize,
+      timeout: o.timeout,
+      characterSet: o.characterSet);
 }
 
 /// Represents a connection to the database. Use [connect] to open a connection. You
 /// must call [close] when you are done.
 class MySqlConnection {
   final ConnectionSettings _connectionSettings;
-  ConnectionSettings get connectionSettings => _connectionSettings;
-  ConnectionSettings get c => _connectionSettings;
 
+  ConnectionSettings get connectionSettings => _connectionSettings;
+
+  ConnectionSettings get c => _connectionSettings;
 
   ReqRespConnection _conn;
   bool _sentClose = false;
@@ -170,13 +170,13 @@ class MySqlConnection {
           new PrepareHandler(sql), c.timeout);
       _log.fine("Prepared queryMulti query for: $sql");
 
-      for (List v in values) {
+      for (var v in values) {
         if (v.length != prepared.parameterCount) {
           throw new MySqlClientError(
               "Length of parameters (${v.length}) does not match parameter count in query (${prepared.parameterCount})");
         }
         var handler =
-            new ExecuteQueryHandler(prepared, false /* executed */, v);
+            new ExecuteQueryHandler(prepared, false /* executed */, v.toList());
         ret.add(await _conn.processHandlerWithResults(handler, c.timeout));
       }
     } finally {
@@ -205,11 +205,14 @@ class MySqlConnection {
 
 class TransactionContext {
   final MySqlConnection _conn;
+
   TransactionContext._(this._conn);
 
   Future<Results> query(String sql, [List values]) => _conn.query(sql, values);
+
   Future<List<Results>> queryMulti(String sql, Iterable<List> values) =>
       _conn.queryMulti(sql, values);
+
   void rollback() => throw new _RollbackError();
 }
 
@@ -455,7 +458,7 @@ class ReqRespConnection {
   Future<T> processHandler<T>(Handler handler, Duration timeout) {
     return pool.withResource(() async {
       try {
-        T ret = await _processHandler(handler).timeout(timeout);
+        T ret = (await _processHandler(handler).timeout(timeout)) as T;
         return ret;
       } finally {
         _handler = null;
@@ -466,7 +469,8 @@ class ReqRespConnection {
   Future<Results> processHandlerWithResults(Handler handler, Duration timeout) {
     return pool.withResource(() async {
       try {
-        ResultsStream results = await _processHandler(handler).timeout(timeout);
+        ResultsStream results =
+            (await _processHandler(handler).timeout(timeout)) as ResultsStream;
         // Read all of the results. This is so we can close the handler before returning to the
         // user. Obviously this is not super efficient but it guarantees correct api use.
         Results ret = await Results._read(results).timeout(timeout);
